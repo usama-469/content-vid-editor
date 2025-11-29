@@ -851,6 +851,44 @@ def visualize_file(py_path: str, out_html: str = None):
         body.dark-mode .focus-mode-hint {
             background-color: rgba(50, 150, 255, 0.9);
         }
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10004;
+            backdrop-filter: blur(4px);
+        }
+        body.dark-mode #loading-overlay {
+            background-color: rgba(0, 0, 0, 0.85);
+        }
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 6px solid rgba(255, 255, 255, 0.3);
+            border-top: 6px solid #0064c8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        body.dark-mode .spinner {
+            border: 6px solid rgba(255, 255, 255, 0.2);
+            border-top: 6px solid #3296ff;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loading-text {
+            color: white;
+            margin-top: 20px;
+            font-size: 14px;
+            text-align: center;
+        }
         #info-panel code {
             font-family: 'Courier New', monospace;
             font-size: 10px;
@@ -870,6 +908,13 @@ def visualize_file(py_path: str, out_html: str = None):
     
     <button id="focus-reset-btn" onclick="resetFocusMode()">🔄 Reset Focus Mode</button>
     <div class="focus-mode-hint">Double-click any node to focus on its connections</div>
+    
+    <div id="loading-overlay">
+        <div style="text-align: center;">
+            <div class="spinner"></div>
+            <div class="loading-text">Updating visualization...</div>
+        </div>
+    </div>
     
     <div id="toggle-btn" onclick="togglePanel()">◀</div>
     
@@ -958,6 +1003,17 @@ def visualize_file(py_path: str, out_html: str = None):
         let allFiles = [];
         let focusModeActive = false;
         let focusedNodeData = null;
+        
+        // Show/hide loading overlay
+        function showLoading() {
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) overlay.style.display = 'flex';
+        }
+        
+        function hideLoading() {
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) overlay.style.display = 'none';
+        }
         
         // Get a safe copy of the layout for 3D plots
         function getSafeLayout() {
@@ -1254,8 +1310,10 @@ def visualize_file(py_path: str, out_html: str = None):
             
             // Update the plot with filtered data
             if (myDiv && myDiv.layout) {
-                Plotly.newPlot('myDiv', filteredData, getSafeLayout());
-                setTimeout(setupClickHandler, 100);
+                Plotly.newPlot('myDiv', filteredData, getSafeLayout()).then(() => {
+                    setupClickHandler();
+                    hideLoading();
+                });
             }
         }
         
@@ -1485,6 +1543,9 @@ def visualize_file(py_path: str, out_html: str = None):
             focusModeActive = false;
             focusedNodeData = null;
             
+            // Show loading
+            showLoading();
+            
             // Hide reset button first
             document.getElementById('focus-reset-btn').style.display = 'none';
             
@@ -1510,16 +1571,20 @@ def visualize_file(py_path: str, out_html: str = None):
             // Restore original graph
             const myDiv = document.getElementById('myDiv');
             if (myDiv && graphData) {
-                Plotly.newPlot('myDiv', graphData, getSafeLayout());
+                // Small delay to ensure loading shows
                 setTimeout(() => {
-                    setupClickHandler();
-                    // Reapply filters if any were active
-                    if (hasFileFilters) {
-                        regenerateGraph();
-                    } else if (hasTypeFilters) {
-                        filterNodes();
-                    }
-                }, 100);
+                    Plotly.newPlot('myDiv', graphData, getSafeLayout()).then(() => {
+                        setupClickHandler();
+                        // Reapply filters if any were active
+                        if (hasFileFilters) {
+                            regenerateGraph();
+                        } else if (hasTypeFilters) {
+                            filterNodes();
+                        } else {
+                            hideLoading();
+                        }
+                    });
+                }, 50);
             }
         }
         
@@ -1765,8 +1830,10 @@ def visualize_file(py_path: str, out_html: str = None):
             
             // Update the plot with filtered data
             if (myDiv && myDiv.layout) {
-                Plotly.newPlot('myDiv', filteredData, getSafeLayout());
-                setTimeout(setupClickHandler, 100);
+                Plotly.newPlot('myDiv', filteredData, getSafeLayout()).then(() => {
+                    setupClickHandler();
+                    hideLoading();
+                });
             }
         }
         
