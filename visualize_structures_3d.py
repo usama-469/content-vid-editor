@@ -808,6 +808,49 @@ def visualize_file(py_path: str, out_html: str = None):
         body.dark-mode .hierarchy-btn:hover {
             background-color: #4a4a4a;
         }
+        #focus-reset-btn {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 8px 16px;
+            background-color: rgba(255, 100, 100, 0.9);
+            color: white;
+            border: 2px solid #cc0000;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            z-index: 10003;
+            display: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: background-color 0.2s ease, transform 0.2s ease;
+        }
+        #focus-reset-btn:hover {
+            background-color: rgba(255, 50, 50, 0.95);
+            transform: translateX(-50%) scale(1.05);
+        }
+        body.dark-mode #focus-reset-btn {
+            background-color: rgba(255, 80, 80, 0.9);
+            border-color: #ff4444;
+        }
+        .focus-mode-hint {
+            position: fixed;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 6px 12px;
+            background-color: rgba(0, 100, 200, 0.9);
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            z-index: 10002;
+            display: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        body.dark-mode .focus-mode-hint {
+            background-color: rgba(50, 150, 255, 0.9);
+        }
         #info-panel code {
             font-family: 'Courier New', monospace;
             font-size: 10px;
@@ -824,6 +867,9 @@ def visualize_file(py_path: str, out_html: str = None):
     </style>
     
     <div id="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">🌓</div>
+    
+    <button id="focus-reset-btn" onclick="resetFocusMode()">🔄 Reset Focus Mode</button>
+    <div class="focus-mode-hint">Double-click any node to focus on its connections</div>
     
     <div id="toggle-btn" onclick="togglePanel()">◀</div>
     
@@ -910,6 +956,39 @@ def visualize_file(py_path: str, out_html: str = None):
         let graphData = null;
         let fileNodeMap = {}; // Maps file names to their associated node indices
         let allFiles = [];
+        let focusModeActive = false;
+        let focusedNodeData = null;
+        
+        // Get a safe copy of the layout for 3D plots
+        function getSafeLayout() {
+            return {
+                title: 'Python Program Data Structures (3D)',
+                showlegend: true,
+                legend: {
+                    x: 1.0,
+                    y: 0.0,
+                    xanchor: 'right',
+                    yanchor: 'bottom',
+                    bgcolor: document.body.classList.contains('dark-mode') ? 'rgba(30, 30, 30, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                    bordercolor: document.body.classList.contains('dark-mode') ? 'rgba(85, 85, 85, 0.3)' : 'rgba(0, 0, 0, 0.3)',
+                    borderwidth: 1,
+                    font: {
+                        color: document.body.classList.contains('dark-mode') ? '#e0e0e0' : '#000000'
+                    }
+                },
+                scene: {
+                    xaxis: {showbackground: false, showticklabels: false, visible: false},
+                    yaxis: {showbackground: false, showticklabels: false, visible: false},
+                    zaxis: {showbackground: false, showticklabels: false, visible: false}
+                },
+                margin: {l: 0, r: 0, t: 40, b: 0},
+                paper_bgcolor: document.body.classList.contains('dark-mode') ? '#1a1a1a' : 'white',
+                plot_bgcolor: document.body.classList.contains('dark-mode') ? '#1a1a1a' : 'white',
+                font: {
+                    color: document.body.classList.contains('dark-mode') ? '#e0e0e0' : '#000000'
+                }
+            };
+        }
         
         // Build file hierarchy and node mapping
         function buildFileHierarchy() {
@@ -1001,7 +1080,6 @@ def visualize_file(py_path: str, out_html: str = None):
             
             if (enabledFiles.length === 0) {
                 // If no files selected, show empty graph
-                const myDiv = document.getElementById('myDiv');
                 const emptyData = [{
                     x: [], y: [], z: [],
                     mode: 'lines',
@@ -1009,7 +1087,8 @@ def visualize_file(py_path: str, out_html: str = None):
                     line: {color: 'rgb(0,100,200)', width: 3},
                     name: 'relations'
                 }];
-                Plotly.react('myDiv', emptyData, myDiv.layout);
+                Plotly.newPlot('myDiv', emptyData, getSafeLayout());
+                setTimeout(setupClickHandler, 100);
                 return;
             }
             
@@ -1174,7 +1253,10 @@ def visualize_file(py_path: str, out_html: str = None):
             }
             
             // Update the plot with filtered data
-            Plotly.react('myDiv', filteredData, myDiv.layout);
+            if (myDiv && myDiv.layout) {
+                Plotly.newPlot('myDiv', filteredData, getSafeLayout());
+                setTimeout(setupClickHandler, 100);
+            }
         }
         
         // Select all files
@@ -1197,6 +1279,222 @@ def visualize_file(py_path: str, out_html: str = None):
                 }
             });
             regenerateGraph();
+        }
+        
+        // Find all nodes connected to a given node
+        function findConnectedNodes(clickedNodeId, clickedNodeType) {
+            if (!graphData || !graphData[0]) return new Set();
+            
+            const connectedNodes = new Set();
+            connectedNodes.add(clickedNodeId); // Include the clicked node itself
+            
+            const edgeTrace = graphData[0];
+            if (!edgeTrace.hovertext) return connectedNodes;
+            
+            // Parse all edges and find direct connections only
+            for (let i = 0; i < edgeTrace.hovertext.length; i += 3) {
+                const hoverText = edgeTrace.hovertext[i];
+                if (!hoverText) continue;
+                
+                const match = hoverText.match(/^(.+?)\s*→\s*(.+?)(?:\s*\(|$)/);
+                if (match) {
+                    let [, nodeA, nodeB] = match;
+                    nodeA = nodeA.trim();
+                    nodeB = nodeB.trim().replace(/\s*\(.+$/, '');
+                    
+                    // Check if the clicked node is one of the endpoints
+                    const isNodeA = (nodeA === clickedNodeId || nodeA.includes(clickedNodeId) || 
+                                    (clickedNodeId.includes('::') && nodeA.includes(clickedNodeId.split('::').pop())));
+                    const isNodeB = (nodeB === clickedNodeId || nodeB.includes(clickedNodeId) || 
+                                    (clickedNodeId.includes('::') && nodeB.includes(clickedNodeId.split('::').pop())));
+                    
+                    // Only add direct connections, and skip module nodes unless clicked node is a module
+                    if (isNodeA) {
+                        // Don't add module nodes unless the clicked node is a module
+                        if (clickedNodeType === 'module' || !nodeB.endsWith('.py')) {
+                            connectedNodes.add(nodeB);
+                        }
+                    }
+                    if (isNodeB) {
+                        // Don't add module nodes unless the clicked node is a module
+                        if (clickedNodeType === 'module' || !nodeA.endsWith('.py')) {
+                            connectedNodes.add(nodeA);
+                        }
+                    }
+                }
+            }
+            
+            return connectedNodes;
+        }
+        
+        // Activate focus mode for a specific node
+        function activateFocusMode(clickedText, clickedCustomData, clickedNodeType) {
+            if (!graphData) return;
+            
+            focusModeActive = true;
+            focusedNodeData = { text: clickedText, customData: clickedCustomData, type: clickedNodeType };
+            
+            // Get the clicked node's full identifier
+            const module = clickedCustomData ? clickedCustomData[2] : '';
+            const fullLabel = clickedCustomData ? clickedCustomData[4] : clickedText;
+            
+            // Build possible identifiers for the clicked node
+            const clickedNodeIds = [clickedText];
+            if (fullLabel) clickedNodeIds.push(fullLabel);
+            if (module && clickedText) clickedNodeIds.push(`${module}::${clickedText}`);
+            
+            // Find all connected nodes (using all possible identifiers)
+            let connectedNodes = new Set();
+            clickedNodeIds.forEach(id => {
+                const nodes = findConnectedNodes(id, clickedNodeType);
+                nodes.forEach(n => connectedNodes.add(n));
+            });
+            
+            console.log('Focus mode - Node type:', clickedNodeType);
+            console.log('Focus mode - Connected nodes:', Array.from(connectedNodes));
+            
+            // Instead of filtering, rebuild the graph with only connected nodes
+            // Get current plot's data and extract only the connected nodes
+            const myDiv = document.getElementById('myDiv');
+            if (!myDiv || !myDiv.data) return;
+            
+            // Build new data arrays with only connected nodes
+            const newData = [];
+            const edgeData = {
+                x: [], y: [], z: [],
+                mode: 'lines',
+                line: {color: 'rgb(0,100,200)', width: 3},
+                opacity: 1.0,
+                hoverinfo: 'text',
+                hovertext: [],
+                name: 'relations',
+                type: 'scatter3d'
+            };
+            newData.push(edgeData);
+            
+            // Track which node identifiers we've seen
+            const processedNodes = new Set();
+            const nodeTraceMap = new Map(); // Maps trace names to new trace data
+            
+            // Process each trace and extract connected nodes
+            myDiv.data.forEach((trace, idx) => {
+                if (idx === 0) return; // Skip edge trace
+                
+                for (let i = 0; i < trace.x.length; i++) {
+                    const text = trace.text ? trace.text[i] : '';
+                    const customData = trace.customdata ? trace.customdata[i] : null;
+                    const nodeModule = customData ? customData[2] : '';
+                    const nodeFullLabel = customData ? customData[4] : text;
+                    
+                    // Check if this node is in the connected set
+                    let isConnected = false;
+                    if (connectedNodes.has(text)) isConnected = true;
+                    if (nodeFullLabel && connectedNodes.has(nodeFullLabel)) isConnected = true;
+                    if (nodeModule && text && connectedNodes.has(`${nodeModule}::${text}`)) isConnected = true;
+                    
+                    // Also check if any connected node matches this one
+                    connectedNodes.forEach(connectedId => {
+                        if (text && (connectedId.includes(text) || text.includes(connectedId.split('::').pop()))) {
+                            isConnected = true;
+                        }
+                    });
+                    
+                    if (isConnected) {
+                        // Create or get trace for this node type
+                        if (!nodeTraceMap.has(trace.name)) {
+                            nodeTraceMap.set(trace.name, {
+                                x: [], y: [], z: [],
+                                mode: trace.mode,
+                                text: [],
+                                textposition: trace.textposition,
+                                hovertext: [],
+                                hoverinfo: trace.hoverinfo,
+                                marker: JSON.parse(JSON.stringify(trace.marker)),
+                                customdata: [],
+                                name: trace.name,
+                                type: 'scatter3d'
+                            });
+                        }
+                        
+                        const newTrace = nodeTraceMap.get(trace.name);
+                        newTrace.x.push(trace.x[i]);
+                        newTrace.y.push(trace.y[i]);
+                        newTrace.z.push(trace.z[i]);
+                        newTrace.text.push(text);
+                        newTrace.hovertext.push(trace.hovertext ? trace.hovertext[i] : '');
+                        if (trace.customdata) {
+                            newTrace.customdata.push(trace.customdata[i]);
+                        }
+                        
+                        processedNodes.add(text);
+                        if (nodeFullLabel) processedNodes.add(nodeFullLabel);
+                        if (nodeModule && text) processedNodes.add(`${nodeModule}::${text}`);
+                    }
+                }
+            });
+            
+            // Add all node traces to newData
+            nodeTraceMap.forEach(trace => {
+                if (trace.x.length > 0) {
+                    newData.push(trace);
+                }
+            });
+            
+            // Add edges between connected nodes
+            const originalEdgeTrace = graphData[0];
+            if (originalEdgeTrace && originalEdgeTrace.hovertext) {
+                for (let i = 0; i < originalEdgeTrace.hovertext.length; i += 3) {
+                    if (i >= originalEdgeTrace.x.length) break;
+                    
+                    const hoverText = originalEdgeTrace.hovertext[i];
+                    if (!hoverText) continue;
+                    
+                    const match = hoverText.match(/^(.+?)\s*→\s*(.+?)(?:\s*\(|$)/);
+                    if (match) {
+                        let [, nodeA, nodeB] = match;
+                        nodeA = nodeA.trim();
+                        nodeB = nodeB.trim().replace(/\s*\(.+$/, '');
+                        
+                        if (connectedNodes.has(nodeA) && connectedNodes.has(nodeB)) {
+                            edgeData.x.push(originalEdgeTrace.x[i]);
+                            edgeData.y.push(originalEdgeTrace.y[i]);
+                            edgeData.z.push(originalEdgeTrace.z[i]);
+                            edgeData.x.push(originalEdgeTrace.x[i + 1]);
+                            edgeData.y.push(originalEdgeTrace.y[i + 1]);
+                            edgeData.z.push(originalEdgeTrace.z[i + 1]);
+                            edgeData.x.push(null);
+                            edgeData.y.push(null);
+                            edgeData.z.push(null);
+                            edgeData.hovertext.push(hoverText);
+                            edgeData.hovertext.push(hoverText);
+                            edgeData.hovertext.push(null);
+                        }
+                    }
+                }
+            }
+            
+            // Update the plot with new data
+            Plotly.newPlot('myDiv', newData, getSafeLayout());
+            
+            // Show reset button
+            document.getElementById('focus-reset-btn').style.display = 'block';
+        }
+        
+        // Reset focus mode and show all nodes
+        function resetFocusMode() {
+            focusModeActive = false;
+            focusedNodeData = null;
+            
+            // Restore original graph by replotting
+            const myDiv = document.getElementById('myDiv');
+            if (myDiv && graphData) {
+                Plotly.newPlot('myDiv', graphData, getSafeLayout());
+                // Reattach click handler after newPlot
+                setTimeout(setupClickHandler, 100);
+            }
+            
+            // Hide reset button
+            document.getElementById('focus-reset-btn').style.display = 'none';
         }
         
         // Dark mode toggle function
@@ -1440,7 +1738,10 @@ def visualize_file(py_path: str, out_html: str = None):
             }
             
             // Update the plot with filtered data
-            Plotly.react('myDiv', filteredData, myDiv.layout);
+            if (myDiv && myDiv.layout) {
+                Plotly.newPlot('myDiv', filteredData, getSafeLayout());
+                setTimeout(setupClickHandler, 100);
+            }
         }
         
         function searchNodes() {
@@ -1510,9 +1811,15 @@ def visualize_file(py_path: str, out_html: str = None):
         // Add click handler for showing node information
         function setupClickHandler() {
             const myDiv = document.getElementById('myDiv');
+            let lastClickTime = 0;
+            let lastClickedPoint = null;
+            
             if (myDiv && myDiv.on) {
                 myDiv.on('plotly_click', function(data) {
                     const point = data.points[0];
+                    const currentTime = new Date().getTime();
+                    const timeDiff = currentTime - lastClickTime;
+                    
                     console.log('Clicked point full object:', JSON.stringify(Object.keys(point)));
                     console.log('Point index:', point.pointIndex);
                     console.log('Point number:', point.pointNumber);
@@ -1521,6 +1828,23 @@ def visualize_file(py_path: str, out_html: str = None):
                     console.log('Trace has customdata?', !!point.data.customdata);
                     
                     if (point.data.name === 'relations') return; // Ignore edge clicks
+                    
+                    // Check for double-click (within 300ms)
+                    if (timeDiff < 300 && lastClickedPoint && 
+                        lastClickedPoint.text === point.text && 
+                        lastClickedPoint.curveNumber === point.curveNumber) {
+                        // Double-click detected - activate focus mode
+                        const idx = point.pointNumber !== undefined ? point.pointNumber : point.pointIndex;
+                        const customData = point.data.customdata ? point.data.customdata[idx] : null;
+                        const nodeType = point.data.name; // Get the node type from trace name
+                        activateFocusMode(point.text, customData, nodeType);
+                        lastClickTime = 0; // Reset to prevent triple-click issues
+                        lastClickedPoint = null;
+                        return;
+                    }
+                    
+                    lastClickTime = currentTime;
+                    lastClickedPoint = point;
                     
                     const infoPanel = document.getElementById('info-panel');
                     const infoContent = document.getElementById('info-content');
