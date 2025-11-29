@@ -1305,6 +1305,8 @@ def visualize_file(py_path: str, out_html: str = None):
         });
         
         function filterNodes() {
+            if (!graphData) return;
+            
             // Get filter states
             const showModules = document.getElementById('show-modules').checked;
             const showClasses = document.getElementById('show-classes').checked;
@@ -1313,28 +1315,132 @@ def visualize_file(py_path: str, out_html: str = None):
             const showVariables = document.getElementById('show-variables').checked;
             const showImports = document.getElementById('show-imports').checked;
             
-            // Filter traces based on name
             const myDiv = document.getElementById('myDiv');
-            if (!myDiv || !myDiv.data) return;
+            if (!myDiv || !graphData) return;
             
-            const updates = {};
-            myDiv.data.forEach((trace, idx) => {
-                if (idx === 0) return; // Skip edge trace
-                
-                const traceName = trace.name.toLowerCase();
-                let visible = true;
-                
-                if (traceName === 'module' && !showModules) visible = false;
-                if (traceName === 'class' && !showClasses) visible = false;
-                if (traceName === 'function' && !showFunctions) visible = false;
-                if (traceName === 'builtin-function' && !showBuiltins) visible = false;
-                if (traceName === 'import' && !showImports) visible = false;
-                if (!showVariables && ['list', 'dict', 'set', 'tuple', 'int', 'str', 'float', 'bool', 'unknown'].includes(traceName)) {
-                    visible = false;
+            // Determine which types should be visible
+            function isTypeVisible(traceName) {
+                const name = traceName.toLowerCase();
+                if (name === 'module') return showModules;
+                if (name === 'class') return showClasses;
+                if (name === 'function') return showFunctions;
+                if (name === 'builtin-function') return showBuiltins;
+                if (name === 'import') return showImports;
+                if (['list', 'dict', 'set', 'tuple', 'int', 'str', 'float', 'bool', 'unknown'].includes(name)) {
+                    return showVariables;
                 }
-                
-                Plotly.restyle('myDiv', {'visible': visible}, [idx]);
+                return true;
+            }
+            
+            // Filter the original data to include only nodes of visible types
+            const filteredData = [];
+            
+            graphData.forEach((trace, idx) => {
+                if (idx === 0) {
+                    // Edge trace - we'll rebuild this based on filtered nodes
+                    filteredData.push({
+                        x: [], y: [], z: [],
+                        mode: 'lines',
+                        line: trace.line,
+                        opacity: trace.opacity,
+                        hoverinfo: trace.hoverinfo,
+                        hovertext: [],
+                        name: trace.name,
+                        type: 'scatter3d'
+                    });
+                } else {
+                    // Check if this trace type should be visible
+                    if (!isTypeVisible(trace.name)) {
+                        return; // Skip this trace entirely
+                    }
+                    
+                    // Include all nodes from this trace
+                    const newTrace = {
+                        x: [...trace.x],
+                        y: [...trace.y],
+                        z: [...trace.z],
+                        mode: trace.mode,
+                        text: trace.text ? [...trace.text] : [],
+                        textposition: trace.textposition,
+                        hovertext: trace.hovertext ? [...trace.hovertext] : [],
+                        hoverinfo: trace.hoverinfo,
+                        marker: JSON.parse(JSON.stringify(trace.marker)),
+                        customdata: trace.customdata ? JSON.parse(JSON.stringify(trace.customdata)) : [],
+                        name: trace.name,
+                        type: 'scatter3d'
+                    };
+                    
+                    filteredData.push(newTrace);
+                }
             });
+            
+            // Rebuild edges based on filtered nodes
+            // Build a comprehensive map of visible nodes with all possible identifiers
+            const nodeIdentifiers = new Set(); // Set of all possible node identifiers
+            
+            filteredData.forEach((trace, idx) => {
+                if (idx > 0) {
+                    for (let i = 0; i < trace.x.length; i++) {
+                        const customData = trace.customdata ? trace.customdata[i] : null;
+                        const displayText = trace.text ? trace.text[i] : '';
+                        const module = customData ? customData[2] : '';
+                        const fullLabel = customData ? customData[4] : displayText;
+                        
+                        // Add all possible identifiers for this node
+                        if (displayText) nodeIdentifiers.add(displayText);
+                        if (fullLabel) nodeIdentifiers.add(fullLabel);
+                        if (module && displayText && trace.name !== 'module') {
+                            nodeIdentifiers.add(`${module}::${displayText}`);
+                        }
+                        if (trace.name === 'module' && module) {
+                            nodeIdentifiers.add(module);
+                        }
+                    }
+                }
+            });
+            
+            // Filter original edges
+            if (graphData[0] && graphData[0].hovertext) {
+                const edgeTrace = filteredData[0];
+                const originalEdgeTrace = graphData[0];
+                
+                for (let i = 0; i < originalEdgeTrace.hovertext.length; i += 3) {
+                    if (i >= originalEdgeTrace.x.length) break;
+                    
+                    const hoverText = originalEdgeTrace.hovertext[i];
+                    if (!hoverText) continue;
+                    
+                    // Parse edge: "nodeA → nodeB (relation)" or "nodeA → nodeB"
+                    const match = hoverText.match(/^(.+?)\s*→\s*(.+?)(?:\s*\(|$)/);
+                    if (match) {
+                        let [, nodeA, nodeB] = match;
+                        nodeA = nodeA.trim();
+                        nodeB = nodeB.trim().replace(/\s*\(.+$/, ''); // Remove relation part if present
+                        
+                        // Check if both nodes exist in visible nodes
+                        const nodeAExists = nodeIdentifiers.has(nodeA);
+                        const nodeBExists = nodeIdentifiers.has(nodeB);
+                        
+                        if (nodeAExists && nodeBExists) {
+                            edgeTrace.x.push(originalEdgeTrace.x[i]);
+                            edgeTrace.y.push(originalEdgeTrace.y[i]);
+                            edgeTrace.z.push(originalEdgeTrace.z[i]);
+                            edgeTrace.x.push(originalEdgeTrace.x[i + 1]);
+                            edgeTrace.y.push(originalEdgeTrace.y[i + 1]);
+                            edgeTrace.z.push(originalEdgeTrace.z[i + 1]);
+                            edgeTrace.x.push(null);
+                            edgeTrace.y.push(null);
+                            edgeTrace.z.push(null);
+                            edgeTrace.hovertext.push(hoverText);
+                            edgeTrace.hovertext.push(hoverText);
+                            edgeTrace.hovertext.push(null);
+                        }
+                    }
+                }
+            }
+            
+            // Update the plot with filtered data
+            Plotly.react('myDiv', filteredData, myDiv.layout);
         }
         
         function searchNodes() {
