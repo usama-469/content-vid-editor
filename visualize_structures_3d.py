@@ -162,31 +162,108 @@ def graph_to_plotly_3d(G: nx.Graph):
         hoverinfo='text',
         hovertext=edge_hover,
         name='relations'
-        )
+    )
 
-        # Slider: provide a few preset colors + opacities that will restyle the edge trace (trace index 0)
-        slider_colors = [
-        ('rgb(0,100,200)', 1.0),
-        ('rgb(200,100,0)', 0.9),
-        ('rgb(50,200,50)', 0.7),
-        ('rgb(150,150,150)', 0.4),
-        ]
-        steps = []
-        for color, opa in slider_colors:
-        steps.append({
-            'label': f'{color} / {opa}',
-            'method': 'restyle',
-            # args: first dict = properties to update, second = list of trace indices to apply to
-            'args': [{'line.color': color, 'opacity': opa}, [0]]
-        })
-
-        sliders = [{
-        'active': 0,
-        'currentvalue': {'prefix': 'Edge color/opacity: '},
-        'pad': {'t': 50},
-        'steps': steps
-        }]
-
+    # Create individual sliders for R, G, B, and opacity on the left side (30% smaller)
+    sliders = [
+        {
+            'active': 0,
+            'yanchor': 'top',
+            'y': 0.95,
+            'xanchor': 'left',
+            'x': 0.01,
+            'len': 0.14,
+            'currentvalue': {
+                'prefix': 'Red: ',
+                'visible': True,
+                'xanchor': 'left',
+                'font': {'size': 10}
+            },
+            'pad': {'b': 5, 't': 5},
+            'font': {'size': 8},
+            'steps': [
+                {
+                    'label': str(r),
+                    'method': 'restyle',
+                    'args': [{'line.color': f'rgb({r},100,200)'}, [0]]
+                }
+                for r in range(0, 256, 25)
+            ]
+        },
+        {
+            'active': 4,
+            'yanchor': 'top',
+            'y': 0.75,
+            'xanchor': 'left',
+            'x': 0.01,
+            'len': 0.14,
+            'currentvalue': {
+                'prefix': 'Green: ',
+                'visible': True,
+                'xanchor': 'left',
+                'font': {'size': 10}
+            },
+            'pad': {'b': 5, 't': 5},
+            'font': {'size': 8},
+            'steps': [
+                {
+                    'label': str(g),
+                    'method': 'restyle',
+                    'args': [{'line.color': f'rgb(0,{g},200)'}, [0]]
+                }
+                for g in range(0, 256, 25)
+            ]
+        },
+        {
+            'active': 8,
+            'yanchor': 'top',
+            'y': 0.55,
+            'xanchor': 'left',
+            'x': 0.01,
+            'len': 0.14,
+            'currentvalue': {
+                'prefix': 'Blue: ',
+                'visible': True,
+                'xanchor': 'left',
+                'font': {'size': 10}
+            },
+            'pad': {'b': 5, 't': 5},
+            'font': {'size': 8},
+            'steps': [
+                {
+                    'label': str(b),
+                    'method': 'restyle',
+                    'args': [{'line.color': f'rgb(0,100,{b})'}, [0]]
+                }
+                for b in range(0, 256, 25)
+            ]
+        },
+        {
+            'active': 10,
+            'yanchor': 'top',
+            'y': 0.35,
+            'xanchor': 'left',
+            'x': 0.01,
+            'len': 0.14,
+            'currentvalue': {
+                'prefix': 'Opacity: ',
+                'visible': True,
+                'xanchor': 'left',
+                'font': {'size': 10}
+            },
+            'pad': {'b': 5, 't': 5},
+            'font': {'size': 8},
+            'steps': [
+                {
+                    'label': f'{o:.1f}',
+                    'method': 'restyle',
+                    'args': [{'opacity': o}, [0]]
+                }
+                for o in [i/10 for i in range(0, 11)]
+            ]
+        }
+    ]
+    
     # Nodes grouped by kind for coloring
     kinds = {}
     for n, data in G.nodes(data=True):
@@ -216,7 +293,7 @@ def graph_to_plotly_3d(G: nx.Graph):
             yaxis=dict(showbackground=False, showticklabels=False, visible=False),
             zaxis=dict(showbackground=False, showticklabels=False, visible=False),
         ),
-        margin=dict(l=0, r=0, t=40, b=0),
+        margin=dict(l=0, r=0, t=40, b=0)
     )
     fig = go.Figure(data=[edge_trace] + node_traces, layout=layout)
     return fig
@@ -224,8 +301,140 @@ def graph_to_plotly_3d(G: nx.Graph):
 def visualize_file(py_path: str, out_html: str = None):
     G = build_graph(py_path)
     fig = graph_to_plotly_3d(G)
+    
+    # Add custom HTML/CSS/JS for collapsible slider panel
+    custom_html = """
+    <style>
+        #slider-panel {
+            position: fixed;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 2px solid #ccc;
+            border-left: none;
+            border-radius: 0 10px 10px 0;
+            padding: 15px 20px;
+            transition: left 0.3s ease;
+            z-index: 10000;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            width: 180px;
+        }
+        #slider-panel.collapsed {
+            left: -220px;
+        }
+        #toggle-btn {
+            position: absolute;
+            right: -30px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 30px;
+            height: 60px;
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 2px solid #ccc;
+            border-left: none;
+            border-radius: 0 10px 10px 0;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: bold;
+            color: #666;
+            transition: background-color 0.2s;
+            user-select: none;
+        }
+        #toggle-btn:hover {
+            background-color: rgba(230, 230, 230, 0.95);
+        }
+        .slider-group {
+            margin-bottom: 15px;
+        }
+        .slider-label {
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 3px;
+            color: #333;
+        }
+        .slider-control {
+            width: 100%;
+        }
+        .slider-value {
+            font-size: 10px;
+            color: #666;
+            text-align: center;
+            margin-top: 2px;
+        }
+    </style>
+    <div id="slider-panel">
+        <div id="toggle-btn" onclick="togglePanel()">◀</div>
+        
+        <h3 style="margin: 0 0 15px 0; font-size: 14px; color: #333; text-align: center; border-bottom: 2px solid #ddd; padding-bottom: 8px;">Edge Styling Controls</h3>
+        
+        <div class="slider-group">
+            <div class="slider-label">Red</div>
+            <input type="range" class="slider-control" id="red-slider" min="0" max="255" value="0" oninput="updateColor()">
+            <div class="slider-value" id="red-value">0</div>
+        </div>
+        
+        <div class="slider-group">
+            <div class="slider-label">Green</div>
+            <input type="range" class="slider-control" id="green-slider" min="0" max="255" value="100" oninput="updateColor()">
+            <div class="slider-value" id="green-value">100</div>
+        </div>
+        
+        <div class="slider-group">
+            <div class="slider-label">Blue</div>
+            <input type="range" class="slider-control" id="blue-slider" min="0" max="255" value="200" oninput="updateColor()">
+            <div class="slider-value" id="blue-value">200</div>
+        </div>
+        
+        <div class="slider-group">
+            <div class="slider-label">Opacity</div>
+            <input type="range" class="slider-control" id="opacity-slider" min="0" max="100" value="100" oninput="updateOpacity()">
+            <div class="slider-value" id="opacity-value">1.0</div>
+        </div>
+    </div>
+    <script>
+        function togglePanel() {
+            const panel = document.getElementById('slider-panel');
+            const btn = document.getElementById('toggle-btn');
+            panel.classList.toggle('collapsed');
+            btn.innerHTML = panel.classList.contains('collapsed') ? '▶' : '◀';
+        }
+        
+        function updateColor() {
+            const r = document.getElementById('red-slider').value;
+            const g = document.getElementById('green-slider').value;
+            const b = document.getElementById('blue-slider').value;
+            
+            document.getElementById('red-value').textContent = r;
+            document.getElementById('green-value').textContent = g;
+            document.getElementById('blue-value').textContent = b;
+            
+            const color = `rgb(${r},${g},${b})`;
+            const update = {'line.color': color};
+            Plotly.restyle('myDiv', update, [0]);
+        }
+        
+        function updateOpacity() {
+            const opacity = document.getElementById('opacity-slider').value / 100;
+            document.getElementById('opacity-value').textContent = opacity.toFixed(1);
+            
+            const update = {'opacity': opacity};
+            Plotly.restyle('myDiv', update, [0]);
+        }
+    </script>
+    """
+    
     if out_html:
-        fig.write_html(out_html, auto_open=True)
+        fig.write_html(out_html, auto_open=True, include_plotlyjs='cdn', div_id='myDiv')
+        # Inject custom HTML
+        with open(out_html, 'r', encoding='utf-8') as f:
+            html_content = f.read()
+        html_content = html_content.replace('</body>', custom_html + '</body>')
+        with open(out_html, 'w', encoding='utf-8') as f:
+            f.write(html_content)
         print(f"Saved 3D visualization to: {out_html}")
     else:
         fig.show()

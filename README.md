@@ -2,6 +2,9 @@
 
 An interactive 3D visualization tool that analyzes Python source code and displays its data structures, classes, functions, and variables as an interactive graph.
 
+![3D Visualization Example](images/visualization_example.png)
+*Interactive 3D graph showing program structure with color-coded nodes*
+
 ## Features
 
 - **AST-based Analysis**: Parses Python files using the Abstract Syntax Tree (AST) to extract program structure
@@ -10,6 +13,20 @@ An interactive 3D visualization tool that analyzes Python source code and displa
 - **Relationship Mapping**: Shows connections between modules, classes, functions, variables, and data structures
 - **Edge Customization**: Interactive slider to change edge colors and opacity in the visualization
 - **Hover Information**: Displays relationship details when hovering over edges
+
+## Screenshots
+
+### Main Visualization
+![Main Graph View](images/main_view.png)
+*3D graph showing classes (red), functions (blue), and data structures*
+
+### Interactive Controls
+![Legend and Controls](images/controls.png)
+*Legend showing element types and edge customization slider*
+
+### Relationship Details
+![Hover Information](images/hover_details.png)
+*Hover over edges to see relationship types and connections*
 
 ## Installation
 
@@ -45,10 +62,6 @@ python visualize_structures_3d.py "your_script.py" "output.html"
 python visualize_structures_3d.py "your_script.py"
 ```
 
-**Real example:**
-```powershell
-python visualize_structures_3d.py "W:\University\Photogrammetric CV\Assignment2\assignment 2 submission\assignment2_fixed.py" "viz_assignment2.html"
-```
 
 ## Color Coding
 
