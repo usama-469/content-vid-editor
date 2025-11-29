@@ -488,7 +488,9 @@ def graph_to_plotly_3d(G: nx.Graph):
             yaxis=dict(showbackground=False, showticklabels=False, visible=False),
             zaxis=dict(showbackground=False, showticklabels=False, visible=False),
         ),
-        margin=dict(l=0, r=0, t=40, b=0)
+        margin=dict(l=0, r=0, t=40, b=0),
+        paper_bgcolor='white',
+        plot_bgcolor='white'
     )
     fig = go.Figure(data=[edge_trace] + node_traces, layout=layout)
     return fig
@@ -500,6 +502,44 @@ def visualize_file(py_path: str, out_html: str = None):
     # Add custom HTML/CSS/JS for collapsible slider panel and filtering
     custom_html = """
     <style>
+        body {
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        body.dark-mode {
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .js-plotly-plot .plotly {
+            transition: background-color 0.3s ease;
+        }
+        #theme-toggle {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(to bottom, #f7d358 50%, #4a5568 50%);
+            border: 3px solid #ccc;
+            cursor: pointer;
+            z-index: 10002;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            transition: transform 0.3s ease, border-color 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        #theme-toggle:hover {
+            transform: scale(1.1);
+        }
+        body.dark-mode #theme-toggle {
+            border-color: #555;
+            transform: rotate(180deg);
+        }
+        body.dark-mode #theme-toggle:hover {
+            transform: rotate(180deg) scale(1.1);
+        }
         #slider-panel {
             position: fixed;
             left: 0;
@@ -510,13 +550,18 @@ def visualize_file(py_path: str, out_html: str = None):
             border-left: none;
             border-radius: 0 10px 10px 0;
             padding: 15px 20px;
-            transition: left 0.3s ease;
+            transition: left 0.3s ease, background-color 0.3s ease, border-color 0.3s ease;
             z-index: 10000;
             box-shadow: 2px 0 10px rgba(0,0,0,0.1);
             width: 200px;
             max-height: 90vh;
             overflow-y: auto;
             overflow-x: visible;
+        }
+        body.dark-mode #slider-panel {
+            background-color: rgba(30, 30, 30, 0.95);
+            border-color: #555;
+            color: #e0e0e0;
         }
         #slider-panel.collapsed {
             left: -240px;
@@ -538,9 +583,14 @@ def visualize_file(py_path: str, out_html: str = None):
             font-size: 18px;
             font-weight: bold;
             color: #666;
-            transition: left 0.3s ease, background-color 0.2s;
+            transition: left 0.3s ease, background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
             user-select: none;
             z-index: 10001;
+        }
+        body.dark-mode #toggle-btn {
+            background-color: rgba(30, 30, 30, 0.95);
+            border-color: #555;
+            color: #aaa;
         }
         #toggle-btn.panel-open {
             left: 240px;
@@ -561,6 +611,10 @@ def visualize_file(py_path: str, out_html: str = None):
             font-weight: bold;
             margin-bottom: 8px;
             color: #555;
+            transition: color 0.3s ease;
+        }
+        body.dark-mode .section-title {
+            color: #bbb;
         }
         .slider-group {
             margin-bottom: 12px;
@@ -596,11 +650,17 @@ def visualize_file(py_path: str, out_html: str = None):
             border: 1px solid #ccc;
             border-radius: 4px;
             margin-bottom: 8px;
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+        }
+        body.dark-mode .search-box {
+            background-color: #2a2a2a;
+            color: #e0e0e0;
+            border-color: #555;
         }
         #info-panel {
             position: fixed;
             right: 10px;
-            top: 10px;
+            top: 70px;
             background-color: rgba(255, 255, 255, 0.95);
             border: 2px solid #ccc;
             border-radius: 8px;
@@ -611,16 +671,30 @@ def visualize_file(py_path: str, out_html: str = None):
             z-index: 9999;
             display: none;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+        body.dark-mode #info-panel {
+            background-color: rgba(30, 30, 30, 0.95);
+            border-color: #555;
+            color: #e0e0e0;
         }
         #info-panel h4 {
             margin: 0 0 8px 0;
             font-size: 14px;
             color: #333;
+            transition: color 0.3s ease;
+        }
+        body.dark-mode #info-panel h4 {
+            color: #e0e0e0;
         }
         #info-panel p {
             margin: 4px 0;
             font-size: 11px;
             color: #666;
+            transition: color 0.3s ease;
+        }
+        body.dark-mode #info-panel p {
+            color: #aaa;
         }
         #info-panel pre {
             background-color: #f5f5f5;
@@ -632,6 +706,11 @@ def visualize_file(py_path: str, out_html: str = None):
             overflow-x: auto;
             max-height: 400px;
             overflow-y: auto;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+        body.dark-mode #info-panel pre {
+            background-color: #252525;
+            border-color: #444;
         }
         #info-panel code {
             font-family: 'Courier New', monospace;
@@ -647,6 +726,8 @@ def visualize_file(py_path: str, out_html: str = None):
             color: #333;
         }
     </style>
+    
+    <div id="theme-toggle" onclick="toggleTheme()" title="Toggle Dark Mode">🌓</div>
     
     <div id="toggle-btn" onclick="togglePanel()">◀</div>
     
@@ -723,6 +804,53 @@ def visualize_file(py_path: str, out_html: str = None):
     <script>
         let graphData = null;
         
+        // Dark mode toggle function
+        function toggleTheme() {
+            const body = document.body;
+            body.classList.toggle('dark-mode');
+            const isDark = body.classList.contains('dark-mode');
+            
+            // Save preference
+            localStorage.setItem('darkMode', isDark);
+            
+            // Update Plotly layout
+            const myDiv = document.getElementById('myDiv');
+            if (myDiv) {
+                const update = {
+                    'paper_bgcolor': isDark ? '#1a1a1a' : 'white',
+                    'plot_bgcolor': isDark ? '#1a1a1a' : 'white',
+                    'font.color': isDark ? '#e0e0e0' : '#000000',
+                    'legend.bgcolor': isDark ? 'rgba(30, 30, 30, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                    'legend.bordercolor': isDark ? 'rgba(85, 85, 85, 0.3)' : 'rgba(0, 0, 0, 0.3)',
+                    'legend.font.color': isDark ? '#e0e0e0' : '#000000'
+                };
+                Plotly.relayout('myDiv', update);
+            }
+        }
+        
+        // Load theme preference on page load
+        function loadThemePreference() {
+            const isDark = localStorage.getItem('darkMode') === 'true';
+            if (isDark) {
+                document.body.classList.add('dark-mode');
+                // Apply dark mode to Plotly after a short delay to ensure plot is ready
+                setTimeout(() => {
+                    const myDiv = document.getElementById('myDiv');
+                    if (myDiv) {
+                        const update = {
+                            'paper_bgcolor': '#1a1a1a',
+                            'plot_bgcolor': '#1a1a1a',
+                            'font.color': '#e0e0e0',
+                            'legend.bgcolor': 'rgba(30, 30, 30, 0.9)',
+                            'legend.bordercolor': 'rgba(85, 85, 85, 0.3)',
+                            'legend.font.color': '#e0e0e0'
+                        };
+                        Plotly.relayout('myDiv', update);
+                    }
+                }, 100);
+            }
+        }
+        
         // Store original graph data and populate search suggestions on load
         window.addEventListener('DOMContentLoaded', function() {
             const myDiv = document.getElementById('myDiv');
@@ -730,6 +858,8 @@ def visualize_file(py_path: str, out_html: str = None):
                 graphData = JSON.parse(JSON.stringify(myDiv.data));
                 populateSearchSuggestions();
             }
+            // Load saved theme preference
+            loadThemePreference();
         });
         
         function populateSearchSuggestions() {
