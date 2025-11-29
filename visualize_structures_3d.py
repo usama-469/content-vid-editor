@@ -138,8 +138,15 @@ def build_graph_from_file(py_path: str, G: nx.Graph) -> None:
                               docstring=fn_docstring[:100], params=params, module=module_name,
                               code_snippet=code_snippet, lineno=body.lineno)
                     G.add_edge(class_label, fn_label, relation="method")
+    
+    # Second pass: Add top-level functions only (not methods inside classes)
+    for node in tree.body:
         if isinstance(node, ast.FunctionDef):
             func_label = f"{module_name}::{node.name}()"
+            # Skip if already added (shouldn't happen, but check to be safe)
+            if G.has_node(func_label):
+                print(f"Skipping duplicate function: {func_label}")
+                continue
             docstring = ast.get_docstring(node) or ""
             params = [arg.arg for arg in node.args.args]
             
@@ -152,7 +159,10 @@ def build_graph_from_file(py_path: str, G: nx.Graph) -> None:
                       docstring=docstring[:100], params=params, module=module_name,
                       code_snippet=code_snippet, lineno=node.lineno)
             G.add_edge(module_name, func_label, relation="contains")
-        elif isinstance(node, ast.Assign):
+    
+    # Third pass: Process variables and function calls
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
             # Left-hand side targets can be multiple
             val_type = guess_type(node.value)
             for tgt in node.targets:
@@ -194,20 +204,22 @@ def build_graph_from_file(py_path: str, G: nx.Graph) -> None:
                 func_name = f"{ast.unparse(node.func)}()" if hasattr(ast, "unparse") else f"{node.func.attr}()"
                 is_builtin = True  # Assume attribute calls are external
             if func_name:
-                if not G.has_node(func_name):
-                    # Use different kind for built-in vs user-defined
-                    func_kind = "builtin-function" if is_builtin else "function"
-                    # Store example usage for built-in functions
+                # Only create nodes for built-in functions, not user-defined ones
+                if G.has_node(func_name):
+                    # Node already exists - just update usage info if it's a built-in
+                    if call_args and G.nodes[func_name].get('kind') == 'builtin-function':
+                        if 'params' not in G.nodes[func_name]:
+                            G.nodes[func_name]['params'] = call_args
+                        usage = f"{func_name.replace('()', '')}({', '.join(call_args)})"
+                        G.nodes[func_name]['usage_example'] = usage
+                elif is_builtin:
+                    # Only add node if it's a built-in/imported function
                     usage = f"{func_name.replace('()', '')}({', '.join(call_args)})" if call_args else func_name
-                    G.add_node(func_name, kind=func_kind, label=func_name, 
+                    G.add_node(func_name, kind="builtin-function", label=func_name, 
                               params=call_args if call_args else [], 
                               usage_example=usage)
-                elif call_args and 'params' not in G.nodes[func_name]:
-                    # Update with argument info if we didn't have it before
-                    G.nodes[func_name]['params'] = call_args
-                    usage = f"{func_name.replace('()', '')}({', '.join(call_args)})"
-                    G.nodes[func_name]['usage_example'] = usage
-                G.add_edge(module_name, func_name, relation="calls")
+                    G.add_edge(module_name, func_name, relation="calls")
+                # Skip creating nodes for user-defined function calls - they're already in the graph from the second pass
                 for arg in node.args:
                     if isinstance(arg, ast.Name) and G.has_node(arg.id):
                         G.add_edge(arg.id, func_name, relation="arg")
@@ -504,20 +516,20 @@ def visualize_file(py_path: str, out_html: str = None):
             width: 200px;
             max-height: 90vh;
             overflow-y: auto;
+            overflow-x: visible;
         }
         #slider-panel.collapsed {
-            left: -250px;
+            left: -240px;
         }
         #toggle-btn {
-            position: absolute;
-            right: -30px;
+            position: fixed;
+            left: 0;
             top: 50%;
             transform: translateY(-50%);
             width: 30px;
             height: 60px;
             background-color: rgba(255, 255, 255, 0.95);
             border: 2px solid #ccc;
-            border-left: none;
             border-radius: 0 10px 10px 0;
             cursor: pointer;
             display: flex;
@@ -526,8 +538,12 @@ def visualize_file(py_path: str, out_html: str = None):
             font-size: 18px;
             font-weight: bold;
             color: #666;
-            transition: background-color 0.2s;
+            transition: left 0.3s ease, background-color 0.2s;
             user-select: none;
+            z-index: 10001;
+        }
+        #toggle-btn.panel-open {
+            left: 240px;
         }
         #toggle-btn:hover {
             background-color: rgba(230, 230, 230, 0.95);
@@ -632,9 +648,9 @@ def visualize_file(py_path: str, out_html: str = None):
         }
     </style>
     
+    <div id="toggle-btn" onclick="togglePanel()">◀</div>
+    
     <div id="slider-panel">
-        <div id="toggle-btn" onclick="togglePanel()">◀</div>
-        
         <h3 style="margin: 0 0 15px 0; font-size: 14px; color: #333; text-align: center; border-bottom: 2px solid #ddd; padding-bottom: 8px;">Visualization Controls</h3>
         
         <div class="control-section">
@@ -743,8 +759,23 @@ def visualize_file(py_path: str, out_html: str = None):
             const panel = document.getElementById('slider-panel');
             const btn = document.getElementById('toggle-btn');
             panel.classList.toggle('collapsed');
-            btn.innerHTML = panel.classList.contains('collapsed') ? '▶' : '◀';
+            
+            if (panel.classList.contains('collapsed')) {
+                btn.innerHTML = '▶';
+                btn.classList.remove('panel-open');
+            } else {
+                btn.innerHTML = '◀';
+                btn.classList.add('panel-open');
+            }
         }
+        
+        // Initialize button position on load
+        window.addEventListener('DOMContentLoaded', function() {
+            const btn = document.getElementById('toggle-btn');
+            if (btn) {
+                btn.classList.add('panel-open');
+            }
+        });
         
         function filterNodes() {
             // Get filter states
