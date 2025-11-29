@@ -13,7 +13,13 @@ An interactive 3D visualization tool that analyzes Python source code and displa
 
 ## Installation
 
-Install required dependencies:
+Install required dependencies using `requirements.txt`:
+
+```powershell
+pip install -r requirements.txt
+```
+
+Or install manually:
 
 ```powershell
 pip install plotly networkx
