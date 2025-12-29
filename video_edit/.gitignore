@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.env
+.venv
+venv/
+ENV/
+
+# Editor/OS
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Project artifacts
+.video_work/
+shorts/
+*.log
+*.tmp
+*.temp
+*.mp4
+*.wav
+*.json
+
+# Backup
+*~

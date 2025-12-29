@@ -1,0 +1,2 @@
+# No external Python package dependencies.
+# Requires system tools: ffmpeg, ffprobe, whisper CLI, ollama.
